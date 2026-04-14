@@ -3,512 +3,334 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Neon Downhill Drift</title>
+<title>Neon Downhill Stable</title>
 <style>
-:root {
-  --bg0: #05070b;
-  --bg1: #0b1020;
-  --bg2: #07111a;
-  --neon: #37f6ff;
-  --neon2: #ff4b8b;
-  --accent: #ffd84d;
-  --trail: #121923;
-  --trailEdge: #3cf3ff;
-  --rock: #202833;
-  --rock2: #2b3542;
-  --txt: #eef6ff;
+:root{
+  --bg:#05070b;
+  --bg2:#0a1424;
+  --trail:#161d26;
+  --trail2:#0d1218;
+  --neon:#39f4ff;
+  --pink:#ff4f92;
+  --gold:#ffd84b;
+  --rock:#2a3440;
+  --white:#eef7ff;
 }
-* { box-sizing: border-box; }
-html, body {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: radial-gradient(circle at 50% 35%, #0b1930 0%, var(--bg0) 58%, #020306 100%);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  touch-action: none;
-}
-canvas {
-  display: block;
-  width: 100vw;
-  height: 100vh;
-}
-#hud {
-  position: fixed;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: white;
-  pointer-events: none;
-  text-align: center;
-  text-shadow: 0 0 12px rgba(0,0,0,.75);
-}
-#hud .title {
-  font-size: 13px;
-  opacity: .75;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
-#hud .speed {
-  font-weight: 900;
-  font-size: 28px;
-  letter-spacing: 1px;
-}
-#hud .speed span { color: var(--accent); }
-#hint {
-  position: fixed;
-  bottom: 26px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(255,255,255,.8);
-  font-size: 13px;
-  letter-spacing: .3px;
-  text-align: center;
-  pointer-events: none;
-  text-shadow: 0 0 12px rgba(0,0,0,.8);
-}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:none}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:radial-gradient(circle at 50% 30%, #10203a 0%, var(--bg) 60%, #020305 100%);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:fixed;left:50%;top:16px;transform:translateX(-50%);text-align:center;color:white;pointer-events:none;text-shadow:0 0 14px rgba(0,0,0,.8)}
+#hud .t{font-size:12px;opacity:.75;letter-spacing:2px;text-transform:uppercase}
+#hud .s{font-size:30px;font-weight:900}
+#hud .s span{color:var(--gold)}
+#hint{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);text-align:center;color:rgba(255,255,255,.82);font-size:13px;pointer-events:none;text-shadow:0 0 14px rgba(0,0,0,.9)}
 </style>
 </head>
 <body>
-<div id="hud">
-  <div class="title">Neon Downhill</div>
-  <div class="speed"><span id="speed">0</span> km/h</div>
-</div>
-<div id="hint">Tartsd nyomva: gurulás • Előre húzva: fék + orr le • Hátra húzva: manuál • Elengedve: ugrás</div>
-<canvas id="game"></canvas>
+<div id="hud"><div class="t">Neon Downhill</div><div class="s"><span id="speed">0</span> km/h</div></div>
+<div id="hint">Tartás: gurul • Előre húzás: fék + orr le • Hátra húzás: manuál • Elengedés: ugrás</div>
+<canvas id="c"></canvas>
 <script>
-const canvas = document.getElementById('game');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const speedEl = document.getElementById('speed');
 
-function resize() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.floor(innerWidth * dpr);
-  canvas.height = Math.floor(innerHeight * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+function resize(){
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(innerWidth*dpr);
+  canvas.height = Math.floor(innerHeight*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
 }
 addEventListener('resize', resize);
 resize();
 
-const W = () => innerWidth;
-const H = () => innerHeight;
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const lerp = (a, b, t) => a + (b - a) * t;
-const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+const W = ()=>innerWidth, H = ()=>innerHeight;
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const TAU = Math.PI*2;
 
+let camX = 0, camY = 0;
+let terrain = [];
+let rocks = [];
+let genX = -400;
+let seed = 0.41731;
+let pointerId = null;
 let hold = false;
 let dragStart = null;
 let dragNow = null;
-let slingshot = { x: 0, y: 0, len: 0 };
+
+function rnd(){ seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+function terrainFunc(x){ return 340 + x*0.21 + Math.sin(x*0.006)*34 + Math.sin(x*0.017)*14 + Math.sin(x*0.041)*5; }
+
+function ensureTerrain(){
+  while(genX < camX + W() + 900){
+    genX += 44 + rnd()*34;
+    const x = genX;
+    const y = terrainFunc(x);
+    terrain.push({x,y});
+    if(rnd() < 0.12){
+      rocks.push({x:x+30+rnd()*90,y:y-(10+rnd()*16),r:9+rnd()*11,vx:0,vy:0,spin:0,a:rnd()*TAU});
+    }
+    if(rnd() < 0.03){
+      rocks.push({x:x+40+rnd()*80,y:y-(18+rnd()*14),r:18+rnd()*9,vx:0,vy:0,spin:0,a:rnd()*TAU});
+    }
+  }
+  terrain = terrain.filter(p=>p.x > camX-300);
+  rocks = rocks.filter(r=>r.x > camX-320 && r.y < camY + H() + 320);
+}
+function groundY(x){
+  for(let i=0;i<terrain.length-1;i++){
+    const a=terrain[i], b=terrain[i+1];
+    if(x>=a.x && x<=b.x){
+      const t=(x-a.x)/(b.x-a.x);
+      return a.y + (b.y-a.y)*t;
+    }
+  }
+  return terrainFunc(x);
+}
+function groundAngle(x){
+  const e = 6;
+  return Math.atan2(groundY(x+e)-groundY(x-e), e*2);
+}
 
 const bike = {
-  x: 120,
-  y: 260,
-  vx: 0,
-  vy: 0,
-  angle: 0,
-  angVel: 0,
-  wheelBase: 78,
-  rearR: 17,
-  frontR: 17,
-  groundedRear: false,
-  groundedFront: false,
-  grounded: false,
-  forkComp: 0,
-  shockComp: 0,
-  forkVel: 0,
-  shockVel: 0,
-  forkVisual: 0,
-  shockVisual: 0,
-  headHitRadius: 12,
-  crash: false,
-  respawnTimer: 0,
+  x: 110, y: 220,
+  vx: 0, vy: 0,
+  angle: -0.12, angVel: 0,
+  wb: 82,
+  rearR: 18, frontR: 18,
+  rearTouch:false, frontTouch:false,
+  forkTarget:0, shockTarget:0,
+  forkVisual:0, shockVisual:0,
+  crash:false, respawn:0
 };
 
-let camX = 0;
-let camY = 0;
-let terr = [];
-let rocks = [];
-let genX = -400;
-let genY = 580;
-let noiseSeed = 0.327;
-
-function rnd() {
-  noiseSeed = (noiseSeed * 16807) % 2147483647;
-  return (noiseSeed - 1) / 2147483646;
-}
-
-function groundProfile(x) {
-  return 340 + x * 0.19 + Math.sin(x * 0.010) * 18 + Math.sin(x * 0.029) * 9 + Math.sin(x * 0.0043) * 35;
-}
-
-function ensureTerrain() {
-  while (genX < camX + W() + 900) {
-    const step = 60 + rnd() * 55;
-    genX += step;
-    const y = groundProfile(genX);
-    terr.push({ x: genX, y });
-
-    if (rnd() < 0.18) {
-      rocks.push({
-        x: genX + 20 + rnd() * 80,
-        y: y - 10 - rnd() * 14,
-        r: 9 + rnd() * 12,
-        vx: 0,
-        vy: 0,
-        spin: 0,
-        ang: rnd() * Math.PI * 2,
-      });
-    }
-    if (rnd() < 0.06) {
-      rocks.push({
-        x: genX + 30 + rnd() * 120,
-        y: y - 20 - rnd() * 16,
-        r: 18 + rnd() * 10,
-        vx: 0,
-        vy: 0,
-        spin: 0,
-        ang: rnd() * Math.PI * 2,
-      });
-    }
-  }
-  terr = terr.filter(p => p.x > camX - 300);
-  rocks = rocks.filter(r => r.x > camX - 300 && r.y < camY + H() + 300);
-}
-
-function terrainYAt(x) {
-  if (terr.length < 2) return groundProfile(x);
-  for (let i = 0; i < terr.length - 1; i++) {
-    const a = terr[i], b = terr[i + 1];
-    if (x >= a.x && x <= b.x) {
-      const t = (x - a.x) / (b.x - a.x);
-      return lerp(a.y, b.y, t);
-    }
-  }
-  return groundProfile(x);
-}
-
-function terrainNormalAt(x) {
-  const e = 3;
-  const y1 = terrainYAt(x - e);
-  const y2 = terrainYAt(x + e);
-  let tx = 2 * e;
-  let ty = y2 - y1;
-  const len = Math.hypot(tx, ty) || 1;
-  tx /= len; ty /= len;
-  return { nx: -ty, ny: tx, tangentX: tx, tangentY: ty, angle: Math.atan2(ty, tx) };
-}
-
-function screenToWorld(cx, cy) {
-  return { x: cx + camX, y: cy + camY };
-}
-
-function pointerDown(cx, cy) {
-  if (bike.crash) {
-    resetGame();
-    return;
-  }
-  hold = true;
-  dragStart = screenToWorld(cx, cy);
-  dragNow = { ...dragStart };
-}
-function pointerMove(cx, cy) {
-  if (!hold) return;
-  dragNow = screenToWorld(cx, cy);
-}
-function pointerUp() {
-  if (!hold) return;
-  let dx = dragNow.x - dragStart.x;
-  let dy = dragNow.y - dragStart.y;
-  const len = Math.hypot(dx, dy);
-  const maxLen = 150;
-  const used = Math.min(len, maxLen);
-  const nx = len > 0 ? dx / len : 0;
-  const ny = len > 0 ? dy / len : 0;
-
-  const pullBack = clamp((-dx) / maxLen, 0, 1);
-  const pullUp = clamp((-dy) / maxLen, 0, 1);
-  const jump = (used / maxLen) * 5.5 + pullUp * 4.5 + pullBack * 1.5;
-
-  bike.vx += 2 + pullBack * 2.5;
-  bike.vy -= jump;
-  bike.angVel += clamp((-dx) * 0.0025, -0.12, 0.12);
-
-  hold = false;
-  dragStart = null;
-  dragNow = null;
-}
-
-canvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
-window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
-window.addEventListener('mouseup', pointerUp);
-canvas.addEventListener('touchstart', e => { const t = e.touches[0]; pointerDown(t.clientX, t.clientY); }, { passive:false });
-window.addEventListener('touchmove', e => { if (!hold) return; const t = e.touches[0]; pointerMove(t.clientX, t.clientY); }, { passive:false });
-window.addEventListener('touchend', pointerUp);
-
-function resetGame() {
-  bike.x = 120;
-  bike.y = 250;
-  bike.vx = 0;
-  bike.vy = 0;
-  bike.angle = -0.15;
-  bike.angVel = 0;
-  bike.crash = false;
-  bike.respawnTimer = 0;
-  bike.forkComp = 0;
-  bike.shockComp = 0;
-  bike.forkVel = 0;
-  bike.shockVel = 0;
-  bike.forkVisual = 0;
-  bike.shockVisual = 0;
-  camX = 0;
-  camY = 0;
-  terr = [];
-  rocks = [];
-  genX = -400;
+function resetGame(){
+  camX=0; camY=0; terrain=[]; rocks=[]; genX=-400;
+  bike.x=110; bike.y=210; bike.vx=0; bike.vy=0; bike.angle=-0.14; bike.angVel=0;
+  bike.rearTouch=false; bike.frontTouch=false; bike.forkTarget=0; bike.shockTarget=0; bike.forkVisual=0; bike.shockVisual=0;
+  bike.crash=false; bike.respawn=0;
   ensureTerrain();
 }
 resetGame();
 
-function update(dt) {
-  ensureTerrain();
+function screenToWorld(x,y){ return {x:x+camX, y:y+camY}; }
 
-  if (bike.crash) {
-    bike.respawnTimer -= dt;
-    if (bike.respawnTimer <= 0) resetGame();
+function onDown(e){
+  e.preventDefault();
+  if(bike.crash){ resetGame(); return; }
+  pointerId = e.pointerId;
+  canvas.setPointerCapture(pointerId);
+  hold = true;
+  dragStart = {x:e.clientX, y:e.clientY};
+  dragNow = {x:e.clientX, y:e.clientY};
+}
+function onMove(e){
+  if(pointerId !== e.pointerId || !hold) return;
+  e.preventDefault();
+  dragNow = {x:e.clientX, y:e.clientY};
+}
+function onUp(e){
+  if(pointerId !== e.pointerId || !hold) return;
+  e.preventDefault();
+  const dx = dragNow.x - dragStart.x;
+  const dy = dragNow.y - dragStart.y;
+  const len = Math.min(Math.hypot(dx,dy), 140);
+  const back = clamp(-dx/140, 0, 1);
+  const up = clamp(-dy/140, 0, 1);
+  bike.vy -= 3.2 + up*4.8 + back*1.5;
+  bike.vx += 1.2 + back*1.8;
+  bike.angVel += clamp((-dx)*0.002, -0.08, 0.08);
+  hold = false;
+  pointerId = null;
+  dragStart = null;
+  dragNow = null;
+}
+canvas.addEventListener('pointerdown', onDown, {passive:false});
+canvas.addEventListener('pointermove', onMove, {passive:false});
+canvas.addEventListener('pointerup', onUp, {passive:false});
+canvas.addEventListener('pointercancel', onUp, {passive:false});
+
+function update(){
+  ensureTerrain();
+  if(bike.crash){
+    bike.respawn -= 1/60;
+    if(bike.respawn <= 0) resetGame();
     return;
   }
 
-  const worldHold = hold && dragStart && dragNow;
-  let pullX = 0, pullY = 0, pullLen = 0;
-  if (worldHold) {
-    pullX = dragNow.x - dragStart.x;
-    pullY = dragNow.y - dragStart.y;
-    pullLen = Math.min(Math.hypot(pullX, pullY), 150);
+  let dragX = 0, dragY = 0;
+  if(hold && dragStart && dragNow){
+    dragX = dragNow.x - dragStart.x;
+    dragY = dragNow.y - dragStart.y;
   }
-  slingshot.x = pullX;
-  slingshot.y = pullY;
-  slingshot.len = pullLen;
+  const lean = hold ? clamp(dragX/90, -1, 1) : 0;
+  const brake = hold ? Math.max(0, lean) : 0.38;
+  const drive = hold ? 0.19 : 0;
 
-  const rearX0 = bike.x - Math.cos(bike.angle) * bike.wheelBase * 0.5;
-  const rearY0 = bike.y - Math.sin(bike.angle) * bike.wheelBase * 0.5;
-  const frontX0 = bike.x + Math.cos(bike.angle) * bike.wheelBase * 0.5;
-  const frontY0 = bike.y + Math.sin(bike.angle) * bike.wheelBase * 0.5;
+  bike.vy += 0.34;
 
-  const rearTy = terrainYAt(rearX0);
-  const frontTy = terrainYAt(frontX0);
-  const rearN = terrainNormalAt(rearX0);
-  const frontN = terrainNormalAt(frontX0);
+  const rearX = bike.x - Math.cos(bike.angle)*bike.wb*0.5;
+  const rearY = bike.y - Math.sin(bike.angle)*bike.wb*0.5;
+  const frontX = bike.x + Math.cos(bike.angle)*bike.wb*0.5;
+  const frontY = bike.y + Math.sin(bike.angle)*bike.wb*0.5;
 
-  const rearPen = rearY0 + bike.rearR - rearTy;
-  const frontPen = frontY0 + bike.frontR - frontTy;
-  const onRear = rearPen >= -1.5;
-  const onFront = frontPen >= -1.5;
-  bike.groundedRear = onRear;
-  bike.groundedFront = onFront;
-  bike.grounded = onRear || onFront;
+  const gyR = groundY(rearX), gyF = groundY(frontX);
+  const penR = rearY + bike.rearR - gyR;
+  const penF = frontY + bike.frontR - gyF;
+  bike.rearTouch = penR >= -2;
+  bike.frontTouch = penF >= -2;
+  const grounded = bike.rearTouch || bike.frontTouch;
 
-  let drive = 0;
-  let brake = 0;
-  let leanInput = 0;
+  if(grounded){
+    const slopeA = bike.rearTouch && bike.frontTouch ? Math.atan2(gyF-gyR, frontX-rearX) : (bike.rearTouch ? groundAngle(rearX) : groundAngle(frontX));
+    const speedPitch = clamp(bike.vx*0.006, -0.04, 0.10);
+    const manual = Math.max(0, -lean) * 0.17;
+    const nose = Math.max(0, lean) * 0.11;
+    const brakeDive = brake * 0.16;
+    const targetA = slopeA + speedPitch + nose - manual - brakeDive;
+    bike.angle = lerp(bike.angle, targetA, bike.rearTouch && bike.frontTouch ? 0.18 : 0.08);
 
-  if (hold) {
-    drive = 0.22;
-    leanInput = clamp(pullX / 95, -1, 1);
-    if (pullX > 0) brake = clamp(pullX / 110, 0, 1);
-  } else {
-    brake = 0.42;
-  }
+    bike.vx += drive + Math.sin(slopeA)*0.16;
+    bike.vx *= 1 - (0.011 + brake*0.05);
 
-  const gravity = 0.45;
-  bike.vy += gravity;
-
-  if (bike.grounded) {
-    const avgAngle = onRear && onFront ? Math.atan2((frontTy - rearTy), (frontX0 - rearX0)) : (onRear ? rearN.angle : frontN.angle);
-    const speedPitch = clamp(bike.vx * 0.007, -0.05, 0.10);
-    const brakeDive = brake * 0.20;
-    const manualLift = Math.max(0, -leanInput) * 0.16;
-    const noseDown = Math.max(0, leanInput) * 0.12;
-    const targetAngle = avgAngle + speedPitch + noseDown - manualLift - brakeDive;
-
-    bike.angle = lerp(bike.angle, targetAngle, onRear && onFront ? 0.16 : 0.09);
-
-    const slopeDrive = Math.sin(avgAngle) * 0.18;
-    bike.vx += drive + slopeDrive;
-    bike.vx *= (1 - 0.016 - brake * 0.055);
-
-    const targetRearComp = clamp(Math.max(0, rearPen) * 1.8 + Math.abs(bike.vy) * 0.55 + Math.max(0, -leanInput) * 3.2, 0, 24);
-    const targetFrontComp = clamp(Math.max(0, frontPen) * 1.9 + Math.abs(bike.vy) * 0.7 + brake * 16 + Math.max(0, leanInput) * 4.5, 0, 30);
-
-    bike.shockVel += (targetRearComp - bike.shockComp) * 0.24;
-    bike.forkVel += (targetFrontComp - bike.forkComp) * 0.28;
-    bike.shockVel *= 0.70;
-    bike.forkVel *= 0.66;
-    bike.shockComp += bike.shockVel;
-    bike.forkComp += bike.forkVel;
-
-    if (onRear) {
-      const desiredRearY = rearTy - bike.rearR;
-      bike.y -= (rearY0 - desiredRearY) * 0.52;
+    if(bike.rearTouch){
+      const target = gyR - bike.rearR;
+      bike.y -= (rearY - target)*0.52;
       bike.vy *= 0.18;
     }
-    if (onFront) {
-      const desiredFrontY = frontTy - bike.frontR;
-      bike.y -= (frontY0 - desiredFrontY) * 0.52;
+    if(bike.frontTouch){
+      const target = gyF - bike.frontR;
+      bike.y -= (frontY - target)*0.52;
       bike.vy *= 0.18;
     }
+
+    bike.shockTarget = clamp(Math.max(0, penR)*2.0 + Math.abs(bike.vy)*0.6 + Math.max(0,-lean)*4, 0, 18);
+    bike.forkTarget = clamp(Math.max(0, penF)*2.0 + Math.abs(bike.vy)*0.8 + brake*18 + Math.max(0,lean)*3, 0, 24);
   } else {
-    bike.vx *= 0.998;
+    bike.vx *= 0.997;
     bike.angle += bike.angVel;
-    bike.angVel += leanInput * 0.007;
-    bike.angVel *= 0.992;
-
-    bike.forkVel += (0 - bike.forkComp) * 0.16;
-    bike.shockVel += (0 - bike.shockComp) * 0.14;
-    bike.forkVel *= 0.87;
-    bike.shockVel *= 0.88;
-    bike.forkComp += bike.forkVel;
-    bike.shockComp += bike.shockVel;
+    bike.angVel += lean*0.0045;
+    bike.angVel *= 0.99;
+    bike.shockTarget *= 0.84;
+    bike.forkTarget *= 0.82;
   }
-
-  bike.forkComp = clamp(bike.forkComp, 0, 32);
-  bike.shockComp = clamp(bike.shockComp, 0, 24);
 
   bike.x += bike.vx;
   bike.y += bike.vy;
 
-  const headX = bike.x + Math.cos(bike.angle) * 25 - Math.sin(bike.angle) * 44;
-  const headY = bike.y + Math.sin(bike.angle) * 25 + Math.cos(bike.angle) * 44;
-  if (headY > terrainYAt(headX) - 6 && bike.vx > 2.5) {
-    bike.crash = true;
-    bike.respawnTimer = 1.2;
-  }
-
-  const rearX = bike.x - Math.cos(bike.angle) * bike.wheelBase * 0.5;
-  const rearY = bike.y - Math.sin(bike.angle) * bike.wheelBase * 0.5;
-  const frontX = bike.x + Math.cos(bike.angle) * bike.wheelBase * 0.5;
-  const frontY = bike.y + Math.sin(bike.angle) * bike.wheelBase * 0.5;
-
-  for (const rock of rocks) {
-    rock.vy += gravity * 0.9;
-    const gy = terrainYAt(rock.x);
-    if (rock.y + rock.r >= gy) {
+  for(const rock of rocks){
+    rock.vy += 0.28;
+    const gy = groundY(rock.x);
+    if(rock.y + rock.r >= gy){
       rock.y = gy - rock.r;
-      const n = terrainNormalAt(rock.x);
-      rock.vy *= -0.1;
-      rock.vx += n.tangentY * 0.12 + Math.sin(n.angle) * 0.25;
-      rock.vx *= 0.993;
-      rock.spin = rock.vx / Math.max(rock.r, 1);
+      const a = groundAngle(rock.x);
+      rock.vy *= -0.08;
+      rock.vx += Math.sin(a)*0.18;
+      rock.vx *= 0.992;
+      rock.spin = rock.vx / Math.max(rock.r,1);
     }
     rock.x += rock.vx;
     rock.y += rock.vy;
-    rock.ang += rock.spin;
+    rock.a += rock.spin;
 
-    const rr = bike.rearR + rock.r;
-    const fr = bike.frontR + rock.r;
-    const dRear = dist(rearX, rearY, rock.x, rock.y);
-    const dFront = dist(frontX, frontY, rock.x, rock.y);
-    if (dRear < rr) {
-      const nx = (rock.x - rearX) / (dRear || 1);
-      const ny = (rock.y - rearY) / (dRear || 1);
-      const push = rr - dRear;
-      rock.x += nx * push * 0.6;
-      rock.y += ny * push * 0.6;
-      rock.vx += nx * 0.35 + bike.vx * 0.05;
-      rock.vy += ny * 0.2;
-      bike.vx *= 0.985;
-      bike.shockVel += push * 0.22;
-    }
-    if (dFront < fr) {
-      const nx = (rock.x - frontX) / (dFront || 1);
-      const ny = (rock.y - frontY) / (dFront || 1);
-      const push = fr - dFront;
-      rock.x += nx * push * 0.7;
-      rock.y += ny * push * 0.7;
-      rock.vx += nx * 0.5 + bike.vx * 0.08;
-      rock.vy += ny * 0.25;
-      bike.vx *= 0.976;
-      bike.forkVel += push * 0.28;
-      if (push > 10 && bike.vx > 6) bike.angVel += 0.03;
+    const pts = [
+      {x:bike.x - Math.cos(bike.angle)*bike.wb*0.5, y:bike.y - Math.sin(bike.angle)*bike.wb*0.5, r:bike.rearR, rear:true},
+      {x:bike.x + Math.cos(bike.angle)*bike.wb*0.5, y:bike.y + Math.sin(bike.angle)*bike.wb*0.5, r:bike.frontR, rear:false}
+    ];
+    for(const p of pts){
+      const dx = rock.x - p.x, dy = rock.y - p.y;
+      const d = Math.hypot(dx,dy) || 1;
+      const rr = rock.r + p.r;
+      if(d < rr){
+        const nx = dx/d, ny = dy/d, push = rr-d;
+        rock.x += nx*push*0.7;
+        rock.y += ny*push*0.7;
+        rock.vx += nx*(p.rear?0.28:0.42) + bike.vx*0.04;
+        rock.vy += ny*0.18;
+        if(p.rear) bike.shockTarget += push*0.6; else bike.forkTarget += push*0.8;
+        bike.vx *= p.rear ? 0.988 : 0.98;
+      }
     }
   }
 
-  bike.forkVisual = lerp(bike.forkVisual, bike.forkComp, 0.38);
-  bike.shockVisual = lerp(bike.shockVisual, bike.shockComp, 0.35);
+  bike.forkVisual = lerp(bike.forkVisual, bike.forkTarget, 0.22);
+  bike.shockVisual = lerp(bike.shockVisual, bike.shockTarget, 0.20);
 
-  camX = lerp(camX, bike.x - W() * 0.28, 0.07);
-  camY = lerp(camY, bike.y - H() * 0.45, 0.07);
+  const headX = bike.x + Math.cos(bike.angle)*18 - Math.sin(bike.angle)*55;
+  const headY = bike.y + Math.sin(bike.angle)*18 + Math.cos(bike.angle)*55;
+  if(headY > groundY(headX)-5 && bike.vx > 3.5){
+    bike.crash = true;
+    bike.respawn = 1.2;
+  }
 
-  speedEl.textContent = Math.max(0, Math.round(bike.vx * 6.5));
+  camX = lerp(camX, bike.x - W()*0.28, 0.08);
+  camY = lerp(camY, bike.y - H()*0.47, 0.08);
+  speedEl.textContent = Math.max(0, Math.round(bike.vx*6.5));
 }
 
-function drawBackground() {
+function drawBg(){
   ctx.fillStyle = '#05070b';
-  ctx.fillRect(0, 0, W(), H());
-
-  let g = ctx.createRadialGradient(W()*0.5, H()*0.4, 0, W()*0.5, H()*0.4, W()*0.7);
-  g.addColorStop(0, 'rgba(55,246,255,0.08)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillRect(0,0,W(),H());
+  const g = ctx.createRadialGradient(W()*0.5,H()*0.38,0,W()*0.5,H()*0.38,W()*0.72);
+  g.addColorStop(0,'rgba(57,244,255,0.08)');
+  g.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0,0,W(),H());
-
-  ctx.strokeStyle = 'rgba(55,246,255,0.03)';
-  for (let i = -1; i < 5; i++) {
+  ctx.strokeStyle = 'rgba(57,244,255,0.03)';
+  for(let i=0;i<5;i++){
     ctx.beginPath();
-    const cx = ((i * 270 - camX * 0.15) % (W()+280)) - 120;
-    const cy = H()*0.45 + Math.sin(i + performance.now()*0.0002) * 20;
-    ctx.arc(cx, cy, 140 + (i%3)*55, 0, Math.PI*2);
+    ctx.arc((i*260 - camX*0.13)%(W()+220)-110, H()*0.48, 130+i*28, 0, TAU);
     ctx.stroke();
   }
 }
 
-function drawTerrain() {
+function drawTerrain(){
   ctx.save();
-  ctx.translate(-camX, -camY);
+  ctx.translate(-camX,-camY);
 
   ctx.beginPath();
-  if (terr.length) {
-    ctx.moveTo(terr[0].x, terr[0].y);
-    for (let i = 1; i < terr.length; i++) ctx.lineTo(terr[i].x, terr[i].y);
-    ctx.lineTo(terr[terr.length-1].x, camY + H() + 300);
-    ctx.lineTo(terr[0].x, camY + H() + 300);
+  if(terrain.length){
+    ctx.moveTo(terrain[0].x, terrain[0].y);
+    for(let i=1;i<terrain.length;i++) ctx.lineTo(terrain[i].x, terrain[i].y);
+    ctx.lineTo(terrain[terrain.length-1].x, camY+H()+300);
+    ctx.lineTo(terrain[0].x, camY+H()+300);
     ctx.closePath();
   }
-  const grd = ctx.createLinearGradient(0, camY, 0, camY + H() + 260);
-  grd.addColorStop(0, '#151b24');
-  grd.addColorStop(1, '#0a0e14');
+  const grd = ctx.createLinearGradient(0,camY,0,camY+H()+280);
+  grd.addColorStop(0,'#19212c');
+  grd.addColorStop(1,'#0a0f15');
   ctx.fillStyle = grd;
   ctx.fill();
 
   ctx.beginPath();
-  if (terr.length) {
-    ctx.moveTo(terr[0].x, terr[0].y);
-    for (let i = 1; i < terr.length; i++) ctx.lineTo(terr[i].x, terr[i].y);
+  if(terrain.length){
+    ctx.moveTo(terrain[0].x, terrain[0].y);
+    for(let i=1;i<terrain.length;i++) ctx.lineTo(terrain[i].x, terrain[i].y);
   }
-  ctx.strokeStyle = '#35f4ff';
+  ctx.strokeStyle = '#39f4ff';
   ctx.lineWidth = 3;
-  ctx.shadowColor = '#35f4ff';
+  ctx.shadowColor = '#39f4ff';
   ctx.shadowBlur = 12;
   ctx.stroke();
   ctx.shadowBlur = 0;
 
-  for (const rock of rocks) {
+  for(const r of rocks){
     ctx.save();
-    ctx.translate(rock.x, rock.y);
-    ctx.rotate(rock.ang);
+    ctx.translate(r.x,r.y);
+    ctx.rotate(r.a);
     ctx.beginPath();
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      const rr = rock.r * (0.82 + ((i % 2) ? 0.18 : -0.06));
-      const px = Math.cos(a) * rr;
-      const py = Math.sin(a) * rr;
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    for(let i=0;i<7;i++){
+      const a = i/7*TAU;
+      const rr = r.r*(0.8 + (i%2?0.18:-0.04));
+      const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     }
     ctx.closePath();
-    ctx.fillStyle = '#252e39';
+    ctx.fillStyle = '#283340';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(55,246,255,0.35)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(57,244,255,0.35)';
+    ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.restore();
   }
@@ -516,160 +338,118 @@ function drawTerrain() {
   ctx.restore();
 }
 
-function drawBike() {
-  const forkSquish = bike.forkVisual;
-  const shockSquish = bike.shockVisual;
-  const wb = bike.wheelBase;
-  const rear = { x: -wb*0.5, y: 0 };
-  const front = { x: wb*0.5, y: 0 };
-
-  const bb = { x: -4, y: -10 + shockSquish * 0.18 };
-  const seat = { x: -26, y: -30 + shockSquish * 0.16 };
-  const headTop = { x: 19, y: -44 + forkSquish * 0.10 };
-  const headBot = { x: 23, y: -31 + forkSquish * 0.13 };
-  const bar = { x: 31, y: -57 + forkSquish * 0.10 };
-  const forkCrown = { x: 21, y: -34 + forkSquish * 0.12 };
-  const axle = { x: front.x, y: front.y };
-  const lowerFork = { x: front.x - 3, y: front.y - 4 };
-  const shockTop = { x: -7, y: -31 };
-  const shockBottom = { x: 1, y: -11 + shockSquish * 0.12 };
+function drawBike(){
+  const fork = bike.forkVisual;
+  const shock = bike.shockVisual;
+  const rear = {x:-bike.wb*0.5,y:0};
+  const front = {x:bike.wb*0.5,y:0};
+  const bb = {x:-5,y:-9 + shock*0.15};
+  const seat = {x:-28,y:-30 + shock*0.12};
+  const headTop = {x:17,y:-43 + fork*0.06};
+  const headBot = {x:22,y:-30 + fork*0.09};
+  const crown = {x:21,y:-33 + fork*0.10};
+  const bar = {x:31,y:-56 + fork*0.06};
+  const forkEndL = {x:front.x-4, y:-12 + fork*0.95};
+  const forkEndR = {x:front.x+2, y:-12 + fork*0.95};
+  const shockTop = {x:-6,y:-31};
+  const shockBot = {x:2,y:-10 + shock*0.18};
 
   ctx.save();
-  ctx.translate(bike.x - camX, bike.y - camY);
+  ctx.translate(bike.x-camX,bike.y-camY);
   ctx.rotate(bike.angle);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-  ctx.lineWidth = 7;
-  ctx.beginPath(); ctx.arc(rear.x, rear.y, bike.rearR, 0, Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(front.x, front.y, bike.frontR, 0, Math.PI*2); ctx.stroke();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#37f6ff';
-  ctx.beginPath(); ctx.arc(rear.x, rear.y, bike.rearR-6, 0, Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(front.x, front.y, bike.frontR-6, 0, Math.PI*2); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.10)';
+  ctx.lineWidth=7;
+  ctx.beginPath();ctx.arc(rear.x,rear.y,bike.rearR,0,TAU);ctx.stroke();
+  ctx.beginPath();ctx.arc(front.x,front.y,bike.frontR,0,TAU);ctx.stroke();
+  ctx.strokeStyle='#39f4ff';
+  ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(rear.x,rear.y,bike.rearR-6,0,TAU);ctx.stroke();
+  ctx.beginPath();ctx.arc(front.x,front.y,bike.frontR-6,0,TAU);ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.82)';
-  ctx.lineWidth = 2.4;
+  ctx.strokeStyle='rgba(255,255,255,.82)';
+  ctx.lineWidth=2.4;
   ctx.beginPath();
-  ctx.moveTo(rear.x, rear.y);
-  ctx.lineTo(bb.x, bb.y);
-  ctx.lineTo(headBot.x, headBot.y);
-  ctx.lineTo(front.x, front.y);
-  ctx.moveTo(headTop.x, headTop.y);
-  ctx.lineTo(seat.x, seat.y);
-  ctx.lineTo(rear.x, rear.y);
-  ctx.moveTo(seat.x, seat.y);
-  ctx.lineTo(bb.x, bb.y);
-  ctx.stroke();
-
-  ctx.strokeStyle = '#ff4b8b';
-  ctx.lineWidth = 2.2;
-  ctx.beginPath();
-  ctx.moveTo(shockTop.x, shockTop.y);
-  ctx.lineTo(shockBottom.x, shockBottom.y);
+  ctx.moveTo(rear.x,rear.y);
+  ctx.lineTo(bb.x,bb.y);
+  ctx.lineTo(headBot.x,headBot.y);
+  ctx.lineTo(front.x,front.y);
+  ctx.moveTo(headTop.x,headTop.y);
+  ctx.lineTo(seat.x,seat.y);
+  ctx.lineTo(rear.x,rear.y);
+  ctx.moveTo(seat.x,seat.y);
+  ctx.lineTo(bb.x,bb.y);
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-  ctx.lineWidth = 5;
+  ctx.strokeStyle='#ff4f92';
+  ctx.lineWidth=2.2;
+  ctx.beginPath();ctx.moveTo(shockTop.x,shockTop.y);ctx.lineTo(shockBot.x,shockBot.y);ctx.stroke();
+  ctx.strokeStyle='#39f4ff';
+  ctx.lineWidth=1.5;
   ctx.beginPath();
-  ctx.moveTo(forkCrown.x, forkCrown.y);
-  ctx.lineTo(lowerFork.x - 4, lowerFork.y);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(forkCrown.x + 5, forkCrown.y - 1);
-  ctx.lineTo(lowerFork.x + 2, lowerFork.y - 1);
-  ctx.stroke();
-
-  ctx.strokeStyle = '#37f6ff';
-  ctx.shadowColor = '#37f6ff';
-  ctx.shadowBlur = 12;
-  ctx.lineWidth = 2.1;
-  ctx.beginPath();
-  ctx.moveTo(headTop.x, headTop.y);
-  ctx.lineTo(bar.x, bar.y);
-  ctx.lineTo(bar.x + 8, bar.y - 2);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(forkCrown.x, forkCrown.y);
-  ctx.lineTo(lowerFork.x, lowerFork.y);
-  ctx.lineTo(axle.x, axle.y);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(forkCrown.x + 5, forkCrown.y - 1);
-  ctx.lineTo(lowerFork.x + 6, lowerFork.y - 1);
-  ctx.lineTo(axle.x + 3, axle.y);
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  ctx.strokeStyle = '#37f6ff';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  for (let i = 0; i < 5; i++) {
-    const t = i / 4;
-    const x = lerp(shockTop.x, shockBottom.x, t) + (i % 2 ? 3 : -3);
-    const y = lerp(shockTop.y, shockBottom.y, t);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  for(let i=0;i<6;i++){
+    const t = i/5;
+    const x = lerp(shockTop.x,shockBot.x,t) + (i%2?3:-3);
+    const y = lerp(shockTop.y,shockBot.y,t);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
 
-  const hands = { x: bar.x + 8, y: bar.y - 1 };
-  const pedals = { x: bb.x + 7, y: bb.y + 9 };
-  let hips = { x: seat.x + 8, y: seat.y - 10 };
-  let shoulders = { x: 8, y: -52 };
-  let helmet = { x: 15, y: -62 };
+  ctx.strokeStyle='rgba(255,255,255,0.26)';
+  ctx.lineWidth=5;
+  ctx.beginPath();ctx.moveTo(crown.x,crown.y);ctx.lineTo(forkEndL.x,forkEndL.y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(crown.x+5,crown.y-1);ctx.lineTo(forkEndR.x,forkEndR.y);ctx.stroke();
 
-  const dx = hold && dragNow && dragStart ? clamp((dragNow.x - dragStart.x)/90, -1, 1) : 0;
-  const airborne = !bike.grounded;
+  ctx.strokeStyle='#39f4ff';
+  ctx.shadowColor='#39f4ff';
+  ctx.shadowBlur=12;
+  ctx.lineWidth=2.1;
+  ctx.beginPath();ctx.moveTo(headTop.x,headTop.y);ctx.lineTo(bar.x,bar.y);ctx.lineTo(bar.x+8,bar.y-2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(crown.x,crown.y);ctx.lineTo(forkEndL.x,forkEndL.y);ctx.lineTo(front.x-1,front.y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(crown.x+5,crown.y-1);ctx.lineTo(forkEndR.x,forkEndR.y);ctx.lineTo(front.x+2,front.y);ctx.stroke();
+  ctx.shadowBlur=0;
 
-  hips.x -= dx * 12;
-  hips.y += Math.max(0, dx) * 5 - Math.max(0, -dx) * 2;
-  shoulders.x += dx * 6;
-  shoulders.y += Math.max(0, dx) * 6;
-  helmet.x += dx * 7;
-  helmet.y += Math.max(0, dx) * 6;
+  const dx = hold && dragStart && dragNow ? clamp((dragNow.x-dragStart.x)/90,-1,1) : 0;
+  const hands = {x:bar.x+8,y:bar.y};
+  const pedals = {x:bb.x+7,y:bb.y+10};
+  let hips = {x:seat.x+8,y:seat.y-8};
+  let shoulder = {x:8,y:-52};
+  let head = {x:15,y:-62};
 
-  if (airborne) {
-    hips.y += 6;
-    shoulders.y += 4;
-    helmet.y += 4;
-  }
+  hips.x -= dx*13;
+  hips.y += Math.max(0,dx)*5 - Math.max(0,-dx)*2;
+  shoulder.x += dx*6;
+  shoulder.y += Math.max(0,dx)*5;
+  head.x += dx*7;
+  head.y += Math.max(0,dx)*5;
+  if(!bike.rearTouch && !bike.frontTouch){ hips.y += 5; shoulder.y += 3; head.y += 3; }
 
-  ctx.strokeStyle = bike.crash ? '#ff4b8b' : '#37f6ff';
-  ctx.shadowColor = ctx.strokeStyle;
-  ctx.shadowBlur = 10;
-  ctx.lineWidth = 4;
+  ctx.strokeStyle=bike.crash?'#ff4f92':'#39f4ff';
+  ctx.shadowColor=ctx.strokeStyle;
+  ctx.shadowBlur=10;
+  ctx.lineWidth=4;
   ctx.beginPath();
-  ctx.moveTo(hips.x, hips.y);
-  ctx.lineTo(shoulders.x, shoulders.y);
-
-  const armMid = { x: (shoulders.x + hands.x)/2 - 2, y: (shoulders.y + hands.y)/2 + 4 };
-  ctx.moveTo(shoulders.x, shoulders.y);
-  ctx.lineTo(armMid.x, armMid.y);
-  ctx.lineTo(hands.x, hands.y);
-
-  const legMid = { x: (hips.x + pedals.x)/2 + 6, y: (hips.y + pedals.y)/2 + 7 };
-  ctx.moveTo(hips.x, hips.y);
-  ctx.lineTo(legMid.x, legMid.y);
-  ctx.lineTo(pedals.x, pedals.y);
+  ctx.moveTo(hips.x,hips.y);
+  ctx.lineTo(shoulder.x,shoulder.y);
+  const armMid = {x:(shoulder.x+hands.x)/2 - 2, y:(shoulder.y+hands.y)/2 + 5};
+  ctx.moveTo(shoulder.x,shoulder.y);
+  ctx.lineTo(armMid.x,armMid.y);
+  ctx.lineTo(hands.x,hands.y);
+  const legMid = {x:(hips.x+pedals.x)/2 + 7, y:(hips.y+pedals.y)/2 + 8};
+  ctx.moveTo(hips.x,hips.y);
+  ctx.lineTo(legMid.x,legMid.y);
+  ctx.lineTo(pedals.x,pedals.y);
   ctx.stroke();
+  ctx.beginPath();ctx.arc(head.x,head.y,8,0,TAU);ctx.fillStyle=ctx.strokeStyle;ctx.fill();
+  ctx.shadowBlur=0;
 
-  ctx.beginPath();
-  ctx.arc(helmet.x, helmet.y, 8, 0, Math.PI*2);
-  ctx.fillStyle = ctx.strokeStyle;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  if (hold && dragStart && dragNow) {
-    const sx = dragStart.x - camX;
-    const sy = dragStart.y - camY;
-    const ex = dragNow.x - camX;
-    const ey = dragNow.y - camY;
-    ctx.setLineDash([8, 6]);
-    ctx.strokeStyle = 'rgba(55,246,255,0.5)';
-    ctx.lineWidth = 2;
+  if(hold && dragStart && dragNow){
+    ctx.setLineDash([8,6]);
+    ctx.strokeStyle='rgba(57,244,255,.5)';
+    ctx.lineWidth=2;
     ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(ex, ey);
+    ctx.moveTo(dragStart.x, dragStart.y);
+    ctx.lineTo(dragNow.x, dragNow.y);
     ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -677,31 +457,28 @@ function drawBike() {
   ctx.restore();
 }
 
-function drawCrash() {
-  if (!bike.crash) return;
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+function drawCrash(){
+  if(!bike.crash) return;
+  ctx.fillStyle='rgba(0,0,0,.45)';
   ctx.fillRect(0,0,W(),H());
-  ctx.fillStyle = '#ff4b8b';
-  ctx.font = '900 46px system-ui';
-  ctx.textAlign = 'center';
-  ctx.fillText('SLAM', W()/2, H()/2 - 10);
-  ctx.fillStyle = 'white';
-  ctx.font = '18px system-ui';
-  ctx.fillText('Újratöltés...', W()/2, H()/2 + 26);
+  ctx.fillStyle='#ff4f92';
+  ctx.font='900 46px system-ui';
+  ctx.textAlign='center';
+  ctx.fillText('SLAM', W()/2, H()/2-8);
+  ctx.fillStyle='#fff';
+  ctx.font='18px system-ui';
+  ctx.fillText('Újratöltés...', W()/2, H()/2+26);
 }
 
-let last = performance.now();
-function loop(now) {
-  const dt = Math.min(1.4, (now - last) / 16.6667);
-  last = now;
-  update(dt);
-  drawBackground();
+function frame(){
+  update();
+  drawBg();
   drawTerrain();
   drawBike();
   drawCrash();
-  requestAnimationFrame(loop);
+  requestAnimationFrame(frame);
 }
-requestAnimationFrame(loop);
+requestAnimationFrame(frame);
 </script>
 </body>
 </html>
